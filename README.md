@@ -1,5 +1,3 @@
-Here is the English translation of your README content:
-
 # Local LAN Texas Hold'em Poker
 
 ## ✨ Features
