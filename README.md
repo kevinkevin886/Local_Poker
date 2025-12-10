@@ -1,27 +1,44 @@
-# Local LAN Texas Hold'em Poker (區域網路德州撲克)
+Here is the English translation of your README content:
 
+# Local LAN Texas Hold'em Poker
 
-## ✨ 特色功能 (Features)
+## ✨ Features
 
-### 核心遊戲機制
-* **完整德州撲克規則**：支援 Pre-flop, Flop, Turn, River, Showdown 完整流程。
-* **專業邊池邏輯 (Side Pots)**：完美處理多人 All-in 且籌碼量不同的情況，確保分錢公平。
-* **智慧莊家系統**：莊家 (Dealer) 按鈕自動順時針傳遞，自動跳過斷線或空位玩家。
-* **防呆機制**：前端 UI 自動計算最小加注額，防止輸入錯誤金額。
+### Core Game Mechanics
 
-### 使用者體驗 (UX)
-* **Teams 風格介面**：採用深色模式、扁平化設計，適合辦公室或開發者聚會風格。
-* **RWD 響應式設計**：支援電腦、平板與手機瀏覽器，牌桌與座位會自動適應視窗大小。
-* **即時聊天室**：
-    * 支援文字聊天與系統訊息廣播。
-    * **表情符號 (Emoji)**：內建表情符號選單。
-    * **訊息回應 (Reactions)**：可對別人的訊息按讚或傳送心情。
-* **客製化頭像**：玩家可上傳圖片作為頭像（自動壓縮處理），或使用預設文字頭像。
+  * **Complete Texas Hold'em Rules**: Supports the full flow including Pre-flop, Flop, Turn, River, and Showdown.
+  * **Professional Side Pot Logic**: Perfectly handles multi-way All-in scenarios with varying stack sizes to ensure fair pot distribution.
+  * **Smart Dealer System**: The Dealer button automatically passes clockwise, intelligently skipping disconnected players or empty seats.
+  * **Error-Proofing Mechanism**: The frontend UI automatically calculates the minimum raise amount to prevent incorrect input values.
 
-## 🚀 快速開始 (Quick Start)
+### User Experience (UX)
 
-### 1. 安裝依賴
-確保你的電腦已安裝 Python 3.x。
+  * **Teams-Style Interface**: Adopts Dark Mode and flat design, suitable for office environments or developer gatherings.
+  * **Responsive Web Design (RWD)**: Supports desktop, tablet, and mobile browsers. The poker table and seats automatically adapt to the window size.
+  * **Real-time Chat Room**:
+      * Supports text chat and system message broadcasting.
+      * **Emojis**: Built-in emoji picker.
+      * **Message Reactions**: Users can like or react to others' messages.
+  * **Custom Avatars**: Players can upload images as avatars (with automatic compression) or use default text-based avatars.
+
+## 🚀 Quick Start
+
+### 1\. Install Dependencies
+
+Ensure your computer has Python 3.x installed.
 
 ```bash
 pip install -r requirements.txt
+```
+
+### 2\. Start the Server
+
+```bash
+python3 app.py
+```
+
+### 3\. Join the Game
+
+```
+http://{host.ip}:5000/
+```
