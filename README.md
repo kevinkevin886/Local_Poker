@@ -40,5 +40,5 @@ python3 app.py
 ### 3\. Join the Game
 
 ```
-http://{host.ip}:5000/
+{host.ip}:5000/
 ```
