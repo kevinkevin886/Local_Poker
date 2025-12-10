@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Teams</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* === 基礎樣式 (保留 Teams 風格) === */
+        :root {
+            --teams-bg-main: #1F1F1F; --teams-bg-panel: #292929;
+            --teams-purple: #6264A7; --teams-border: #3E3E3E;
+        }
+        body { background-color: var(--teams-bg-main); color: #FFF; }
+
+        .game-arena { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 10px; }
+        .table-layout { position: relative; width: 100%; max-width: 1100px; aspect-ratio: 2.1/1; max-height: 75vh; margin: auto; }
+        
+        /* 牌桌 */
+        .visual-table {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 82%; height: 72%; border-radius: 999px; z-index: 1;
+            background: radial-gradient(circle, #3b4252 0%, #2e3440 100%);
+            border: 12px solid #434c5e; box-shadow: inset 0 0 30px rgba(0,0,0,0.9);
+        }
+
+        /* 座位與卡牌 (維持原樣) */
+        .seat { position: absolute; width: 12%; height: 22%; min-width: 70px; min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; transform: translate(-50%, -50%); pointer-events: none; }
+        .seat > * { pointer-events: auto; }
+        .seat-0 { top: 88%; left: 50%; } .seat-1 { top: 80%; left: 18%; } .seat-7 { top: 80%; left: 82%; }
+        .seat-4 { top: 12%; left: 50%; } .seat-3 { top: 20%; left: 18%; } .seat-5 { top: 20%; left: 82%; }
+        .seat-2 { top: 50%; left: 6%; }  .seat-6 { top: 50%; left: 94%; }
+        .card-img { width: clamp(36px, 4vw, 60px); height: clamp(54px, 6vw, 90px); background: white; border-radius: 4px; box-shadow: 2px 2px 5px rgba(0,0,0,0.4); }
+        .avatar { width: clamp(36px, 5vw, 56px); height: clamp(36px, 5vw, 56px); background: var(--teams-bg-panel); border: 2px solid #8B8CC7; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: clamp(0.7rem, 1.2vw, 1rem); flex-shrink: 0; overflow: hidden; }
+        .seat-active .avatar { border-color: #6264A7; box-shadow: 0 0 0 3px rgba(98, 100, 167, 0.5); transform: scale(1.1); }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .empty-seat { width: clamp(36px, 5vw, 56px); height: clamp(36px, 5vw, 56px); border-radius: 50%; border: 2px dashed #666; display: flex; align-items: center; justify-content: center; color: #666; background: rgba(255,255,255,0.05); cursor: pointer; }
+        .empty-seat:hover { border-color: var(--teams-purple); color: var(--teams-purple); }
+        .player-info { width: 150%; text-align: center; margin-top: 4px; line-height: 1.1; }
+        .player-name { font-size: clamp(0.6rem, 1.1vw, 0.9rem); color: #E8EAED; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .player-chips { font-size: clamp(0.6rem, 1vw, 0.8rem); color: #A0A0A0; }
+        .chip-bubble { background: var(--teams-purple); padding: 1px 8px; border-radius: 4px; font-size: clamp(0.6rem, 0.9vw, 0.75rem); margin-top: 2px; display: inline-block; font-weight: bold; }
+        .dealer-btn { position: absolute; top: 0; right: 50%; transform: translate(140%, 0); width: clamp(14px, 1.5vw, 20px); height: clamp(14px, 1.5vw, 20px); background: white; color: #6264A7; border: 2px solid #6264A7; border-radius: 50%; font-size: clamp(8px, 0.8vw, 10px); display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 20; }
+        .community-area { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; width: 100%; z-index: 5; pointer-events: none; }
+        .pot-text { font-family: 'Segoe UI', sans-serif; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.5); font-size: clamp(1rem, 2vw, 1.5rem); margin-bottom: 6px; }
+        .phase-text { color: #A6A6A6; font-weight: 600; letter-spacing: 0.05em; font-size: clamp(0.7rem, 1.2vw, 0.9rem); margin-top: 6px; }
+
+        /* === 聊天室樣式 (Teams 風格 + Emoji 擴充) === */
+        .chat-container { display: flex; flex-direction: column; height: 100%; border-left: 1px solid var(--teams-border); background: var(--teams-bg-panel); }
+        .chat-header { height: 3.5rem; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--teams-border); font-weight: 600; flex-shrink: 0; }
+        .chat-msgs { flex-grow: 1; overflow-y: auto; padding: 16px; background: var(--teams-bg-main); display: flex; flex-direction: column; gap: 12px; }
+        
+        .chat-msg-row { display: flex; gap: 8px; align-items: flex-start; position: relative; }
+        /* 滑鼠移上去才顯示表情按鈕 */
+        .chat-msg-row:hover .reaction-btn { opacity: 1; }
+
+        .chat-avatar { width: 32px; height: 32px; border-radius: 50%; background: #444; display: flex; align-items: center; justify-content: center; font-size: 12px; overflow: hidden; border: 1px solid #555; flex-shrink: 0; }
+        .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        
+        .chat-bubble { 
+            background: #292929; border: 1px solid #3E3E3E; color: #E8EAED; padding: 8px 12px; border-radius: 6px; 
+            font-size: 0.9rem; line-height: 1.4; word-wrap: break-word; position: relative;
+        }
+        .chat-name { font-weight: bold; font-size: 0.75rem; color: #A6A6A6; margin-bottom: 2px; display: block; }
+        
+        /* 表情選擇面板 (Popup) - 縮小版 */
+        .reaction-picker {
+            position: absolute; 
+            top: -28px; /* 稍微靠近訊息一點 */
+            right: 0;
+            background: #2D2D2D; 
+            border: 1px solid #444; 
+            border-radius: 16px; /* 圓角稍微縮小 */
+            padding: 2px 6px;    /* 內距縮小 */
+            display: flex; 
+            gap: 2px;            /* 間距縮小 */
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+            z-index: 20;
+        }
+        
+        .reaction-item { 
+            cursor: pointer; 
+            font-size: 14px; /* 字體縮小 (原 18px) */
+            padding: 2px 4px; /* 點擊範圍縮小 */
+            border-radius: 4px;
+            transition: transform 0.1s, background-color 0.1s; 
+        }
+        
+        .reaction-item:hover { 
+            transform: scale(1.2); 
+            background-color: #3E3E3E; /* 增加 hover 背景色回饋 */
+        }
+
+        /* 順便微調 hover 出現的按鈕大小 */
+        .reaction-btn {
+            position: absolute; top: -8px; right: 0; 
+            background: #333; border: 1px solid #555; border-radius: 10px;
+            padding: 0px 4px; /* 縮小內距 */
+            font-size: 12px;  /* 字體縮小 */
+            cursor: pointer; opacity: 0; transition: opacity 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 10;
+            line-height: 1.2;
+        }
+
+        /* 顯示在訊息下方的已按表情 */
+        .reactions-display { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+        .reaction-tag {
+            background: #202020; border: 1px solid #444; border-radius: 10px;
+            padding: 1px 6px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 2px;
+        }
+        .reaction-tag:hover { background: #333; border-color: #666; }
+
+        /* 輸入區 Emoji Picker */
+        .emoji-picker-container { position: relative; }
+        .emoji-popup {
+            position: absolute; bottom: 40px; right: 0;
+            background: #2D2D2D; border: 1px solid #444; border-radius: 8px;
+            width: 220px; height: 180px; overflow-y: auto; padding: 8px;
+            display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.5); z-index: 50;
+        }
+        .emoji-btn { font-size: 20px; cursor: pointer; text-align: center; border-radius: 4px; }
+        .emoji-btn:hover { background: #444; }
+
+        .chat-footer { height: 6rem; padding: 0 12px; background: var(--teams-bg-panel); border-top: 1px solid var(--teams-border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .input-teams { background-color: #1F1F1F; border: 1px solid #555; color: white; border-radius: 4px; padding: 8px; width: 100%; }
+        
+        .upload-preview { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #6264A7; margin: 0 auto 15px auto; overflow: hidden; position: relative; cursor: pointer; background: #333; display: flex; align-items: center; justify-content: center; }
+        .upload-preview:hover::after { content: '更換'; position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0,0,0,0.6); color: white; font-size: 10px; padding: 2px 0; }
+        .upload-preview img { width: 100%; height: 100%; object-fit: cover; }
+        
+        .btn-teams-primary { background: var(--teams-purple); color: white; transition: 0.2s; } .btn-teams-primary:hover { background: #585A96; }
+        .btn-teams-secondary { background: #333; border: 1px solid #555; } .btn-teams-danger { background: #C53030; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+        /* 倒數計時圈 */
+        .timer-ring {
+            position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            z-index: -1;
+        }
+        .seat-active .timer-ring {
+            border-color: #f59e0b; /* yellow-500 */
+            animation: pulse-ring 1s infinite;
+        }
+        
+        /* 簡單的倒數數字顯示 */
+        .timer-badge {
+            position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+            background: #ef4444; color: white; font-size: 10px; font-weight: bold;
+            padding: 1px 6px; border-radius: 10px; z-index: 30;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="font-sans h-screen w-screen overflow-hidden flex flex-col">
+
+<div id="app" class="flex-grow flex flex-col h-full">
+    
+    <div v-if="!joined" class="fixed inset-0 z-50 flex items-center justify-center" style="background-color: var(--teams-bg-main);">
+        <div class="p-10 rounded-lg shadow-2xl text-center w-96 border border-[#3E3E3E]" style="background-color: var(--teams-bg-panel);">
+            <div class="mb-4 flex justify-center items-center gap-3">
+                <div class="w-10 h-10 rounded bg-[#6264A7] flex items-center justify-center text-white font-bold text-xl">P</div>
+                <h1 class="text-3xl text-white font-semibold">Poker Teams</h1>
+            </div>
+            <div class="upload-preview" @click="triggerFileInput">
+                <img v-if="avatarPreview" :src="avatarPreview">
+                <span v-else class="text-gray-400 text-2xl">📷</span>
+            </div>
+            <input type="file" ref="fileInput" accept="image/*" class="hidden" @change="handleFileUpload">
+            <input v-model="nickname" type="text" placeholder="輸入名稱" class="input-teams mb-6 text-center">
+            <button @click="joinGame" class="w-full btn-teams-primary font-bold py-3 rounded shadow">加入會議</button>
+        </div>
+    </div>
+
+    <div v-else class="flex h-full w-full">
+        <div class="w-3/4 flex flex-col relative h-full" style="border-right: 1px solid var(--teams-border);">
+            <div class="h-14 flex items-center justify-between px-6 shadow-sm z-30 shrink-0" style="background-color: var(--teams-bg-panel); border-bottom: 1px solid var(--teams-border);">
+                <div class="flex items-center gap-4">
+                    <div class="text-[#A6A6A6] font-semibold text-lg">Meeting: <span class="text-white">Room 888</span></div>
+                    <div class="text-[#A6A6A6] text-sm">| &nbsp; 我是: <span class="text-[#6264A7] font-bold text-base">[[ nickname ]]</span></div>
+                </div>
+                <div v-if="gameState.winner_msg" class="absolute top-14 left-0 w-full text-center py-2 z-50 pointer-events-none" style="background-color: rgba(98, 100, 167, 0.95); border-bottom: 1px solid #fff;">
+                    <span class="text-white font-bold text-lg whitespace-pre-wrap">[[ gameState.winner_msg ]]</span>
+                </div>
+                <button v-if="isHost" 
+                        @click="startGame" 
+                        :disabled="isGameRunning"
+                        :class="[
+                            isGameRunning ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'btn-teams-primary hover:bg-[#585A96]',
+                            'px-5 py-1.5 rounded font-semibold text-sm shadow transition'
+                        ]">
+                    [[ hostButtonText ]]
+                </button>
+                <div v-else class="text-gray-400 text-xs flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                    [[ isGameRunning ? '遊戲進行中...' : '等待主持人...' ]]
+                </div>
+            </div>
+
+            <div class="flex-grow relative game-arena">
+                <div class="table-layout">
+                    <div class="visual-table">
+                        <div class="community-area">
+                            <div class="pot-text">Pot: $[[ gameState.pot ]]</div>
+                            <div class="flex gap-2 items-center justify-center">
+                                <img v-for="card in gameState.community_cards" :src="getCardUrl(card)" class="card-img">
+                                <div v-if="gameState.community_cards.length === 0" class="w-10 h-14 border-2 border-dashed border-gray-500 rounded opacity-30"></div>
+                            </div>
+                            <div class="phase-text">[[ gameState.phase ]]</div>
+                            <div v-if="gameState.current_bet > 0" class="text-white text-xs mt-2 bg-[#1F1F1F] border border-[#3E3E3E] px-3 py-1 rounded-full">Bet: $[[ gameState.current_bet ]]</div>
+                            <div v-if="canRaise" class="text-gray-500 text-[10px] mt-1">Min: $[[ minRaiseTarget ]]</div>
+                        </div>
+                    </div>
+                    <div v-for="(player, idx) in gameState.players" :class="['seat', 'seat-' + idx, {'seat-active': player && player.is_turn}]">
+                        <template v-if="player">
+                            <div v-if="player.is_turn && gameState.phase !== 'WAITING' && gameState.phase !== 'SHOWDOWN'" class="timer-badge">
+                                ⏳ [[ timer ]]s
+                            </div>
+                            <div v-if="gameState.dealer_seat === idx" class="dealer-btn">D</div>
+                            <div class="avatar">
+                                <img v-if="player.avatar" :src="player.avatar">
+                                <span v-else>[[ player.name.substring(0, 2).toUpperCase() ]]</span>
+                                <div v-if="player.disconnected" class="absolute inset-0 bg-red-600 bg-opacity-90 rounded-full flex items-center justify-center text-[10px] text-white">離線</div>
+                            </div>
+                            <div class="player-info">
+                                <div class="player-name">[[ player.name ]]</div>
+                                <div class="player-chips">$[[ player.chips ]]</div>
+                                <div v-if="player.bet > 0" class="chip-bubble">Bet: [[ player.bet ]]</div>
+                                <div v-if="player.folded" class="chip-bubble" style="background-color: #C53030;">Fold</div>
+                            </div>
+                        </template>
+                        <template v-else><div class="empty-seat">+</div></template>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-24 flex items-center px-6 justify-between shrink-0 z-40" style="background-color: var(--teams-bg-panel); border-top: 1px solid var(--teams-border);">
+                <div class="flex flex-col items-center">
+                    <div class="text-[#A6A6A6] text-[10px] mb-1 tracking-wider uppercase font-bold">Your Hand</div>
+                    <div class="flex gap-2">
+                        <img v-for="card in myHand" :src="getCardUrl(card)" class="card-img" style="height: 75px; width: 50px;">
+                        <div v-if="myHand.length === 0" class="text-gray-500 italic text-xs mt-4">Waiting...</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div v-if="isMyTurn" class="flex gap-3 items-center">
+                        <button @click="sendAction('fold')" class="btn-teams-danger px-4 py-2 rounded font-semibold text-sm shadow min-w-[80px]">棄牌</button>
+                        <button @click="sendAction('call')" class="btn-teams-secondary px-4 py-2 rounded font-semibold text-sm min-w-[100px] shadow">
+                            <div v-if="myToCall === 0">過牌</div>
+                            <div v-else-if="myToCall < myPlayer.chips">跟注 $[[ myToCall ]]</div>
+                            <div v-else>全下</div>
+                        </button>
+                        <div v-if="canRaise" class="flex items-center gap-2 p-1 rounded" style="background-color: var(--teams-bg-main); border: 1px solid var(--teams-border);">
+                            <button @click="adjustRaise(-10)" class="w-8 h-8 rounded text-white font-bold hover:bg-[#333] transition">-</button>
+                            <input v-model.number="raiseTotal" type="number" :min="minRaiseTarget" :max="myMaxAssets" class="w-16 bg-transparent text-[#6264A7] font-bold text-center p-1 text-sm outline-none">
+                            <button @click="adjustRaise(10)" class="w-8 h-8 rounded text-white font-bold hover:bg-[#333] transition">+</button>
+                            <button @click="sendAction('raise')" class="btn-teams-primary px-3 py-1.5 rounded font-bold text-sm ml-1"><span v-if="raiseTotal >= myMaxAssets">All-in</span><span v-else>加注</span></button>
+                        </div>
+                    </div>
+                    <div v-else class="text-gray-400 font-medium text-sm flex items-center gap-2 bg-[#1F1F1F] px-4 py-2 rounded border border-[#3E3E3E]"><span class="inline-block w-2 h-2 bg-[#6264A7] rounded-full animate-pulse"></span>等待對手行動...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-1/4 chat-container min-w-[280px]">
+            <div class="chat-header">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#6264A7]" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
+                </svg>
+                會議聊天
+            </div>
+            
+            <div class="chat-msgs" id="chat-box" @click="closePickers">
+                <div v-for="(msg, index) in chatMessages" :key="index">
+                    <div v-if="msg.name === 'SYSTEM'" class="msg-system">[[ msg.msg ]]</div>
+                    <div v-else class="chat-msg-row" @mouseleave="hoveredMsgId = null" @mouseover="hoveredMsgId = msg.id">
+                        <div class="chat-avatar">
+                            <img v-if="msg.avatar" :src="msg.avatar">
+                            <span v-else>[[ msg.name.substring(0, 1).toUpperCase() ]]</span>
+                        </div>
+                        <div style="max-width: 85%; position: relative;">
+                            <span class="chat-name">[[ msg.name ]] <span class="text-xs text-gray-500 font-normal ml-1">[[ new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) ]]</span></span>
+                            
+                            <div class="chat-bubble">
+                                [[ msg.msg ]]
+                                <div v-if="msg.reactions && Object.keys(msg.reactions).length > 0" class="reactions-display">
+                                    <div v-for="(count, emoji) in msg.reactions" class="reaction-tag" @click="sendReaction(msg.id, emoji)">
+                                        [[ emoji ]] [[ count ]]
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button v-show="hoveredMsgId === msg.id || reactionMenuMsgId === msg.id" 
+                                    class="reaction-btn" 
+                                    @click.stop="toggleReactionMenu(msg.id)">
+                                ☺
+                            </button>
+
+                            <div v-if="reactionMenuMsgId === msg.id" class="reaction-picker">
+                                <span v-for="emoji in reactionOptions" :key="emoji" class="reaction-item" @click.stop="sendReaction(msg.id, emoji)">
+                                    [[ emoji ]]
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-footer relative">
+                <div v-if="showEmojiPicker" class="emoji-popup">
+                    <div v-for="emoji in emojiList" :key="emoji" class="emoji-btn" @click="insertEmoji(emoji)">
+                        [[ emoji ]]
+                    </div>
+                </div>
+
+                <button class="text-gray-400 hover:text-white" @click.stop="showEmojiPicker = !showEmojiPicker">
+                    ☺
+                </button>
+                <input v-model="chatInput" @keyup.enter="sendChat" type="text" placeholder="輸入訊息..." class="input-teams text-sm" @click="showEmojiPicker = false">
+                <button @click="sendChat" class="text-[#6264A7] hover:text-[#8B8CC7] p-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    new Vue({
+        el: '#app',
+        delimiters: ['[[', ']]'],
+        data: {
+            nickname: '', joined: false, myHand: [],
+            gameState: { players: [], community_cards: [], pot: 0, phase: 'WAITING', current_bet: 0, winner_msg: '', min_raise_amount: 0 },
+            raiseTotal: 0, mySeat: -1,
+            chatInput: '', 
+            chatMessages: [],
+            avatarPreview: null,
+            // ★ 新增功能變數
+            showEmojiPicker: false,
+            hoveredMsgId: null,
+            reactionMenuMsgId: null,
+            emojiList: ['😀','😂','😍','😎','😭','😡','👍','👎','❤️','🔥','🎉','💩','🤡','👻','🤖','👽','👋','👌','👀','💯'],
+            reactionOptions: ['👍','❤️','😂','😢','😡'],
+            timer: 30, // 本地倒數顯示用
+            timerInterval: null,
+        },
+        computed: {
+            isMyTurn() {
+                if (this.mySeat === -1) return false;
+                const p = this.gameState.players[this.mySeat];
+                return p && p.is_turn;
+            },
+            isHost() { return this.mySeat === 0; },
+            myPlayer() {
+                if (this.mySeat === -1) return null;
+                return this.gameState.players[this.mySeat];
+            },
+            // ★ 新增：判斷遊戲是否正在進行 (不能中斷)
+            isGameRunning() {
+                // 如果 phase 不是 WAITING 也不是 SHOWDOWN，代表正在打牌
+                return this.gameState.phase !== 'WAITING' && this.gameState.phase !== 'SHOWDOWN';
+            },
+
+            // ★ 新增：按鈕文字邏輯
+            hostButtonText() {
+                if (this.isGameRunning) return '遊戲進行中 (Playing...)';
+                if (this.gameState.winner_msg) return '下一局 (Next Round)';
+                return '開始遊戲 (Start Game)';
+            },
+            myToCall() { return this.myPlayer ? this.myPlayer.to_call : 0; },
+            myMaxAssets() { return this.myPlayer ? this.myPlayer.chips + this.myPlayer.bet : 0; },
+            minRaiseTarget() { return this.gameState.min_raise_amount; },
+            canRaise() { return this.myMaxAssets > this.gameState.current_bet; }
+        },
+        watch: {
+            isMyTurn(val) {
+                if (val && this.canRaise) {
+                    this.raiseTotal = Math.max(this.minRaiseTarget, Math.min(this.gameState.current_bet * 2, this.myMaxAssets));
+                    if (this.raiseTotal < this.minRaiseTarget) this.raiseTotal = this.minRaiseTarget;
+                    if (this.raiseTotal > this.myMaxAssets) this.raiseTotal = this.myMaxAssets;
+                }
+            },
+            chatMessages() {
+                this.$nextTick(() => {
+                    const box = document.getElementById('chat-box');
+                    if(box) box.scrollTop = box.scrollHeight;
+                });
+            }
+        },
+        mounted() {
+            socket.on('state_update', (state) => {
+                this.gameState = state;
+                const me = state.players.find(p => p && p.name === this.nickname);
+                if (me) this.mySeat = me.seat;
+                // ★ 同步倒數時間
+                if (state.time_left !== undefined) {
+                    this.timer = state.time_left;
+                    clearInterval(this.timerInterval);
+                    if (state.time_left > 0) {
+                        this.timerInterval = setInterval(() => {
+                            if (this.timer > 0) this.timer--;
+                        }, 1000);
+                    }
+                }
+            });
+            socket.on('my_hand', (data) => { this.myHand = data.hand; });
+            socket.on('error_msg', (data) => { alert(data.msg); });
+            socket.on('new_chat', (data) => { this.chatMessages.push(data); });
+            
+            // ★ 監聽表情更新
+            socket.on('update_reaction', (data) => {
+                // 找到對應的訊息
+                const msg = this.chatMessages.find(m => m.id === data.msg_id);
+                if (msg) {
+                    if (!msg.reactions) this.$set(msg, 'reactions', {});
+                    if (!msg.reactions[data.emoji]) this.$set(msg.reactions, data.emoji, 0);
+                    
+                    // 簡單累加 (實際專案應該檢查是否重複按)
+                    msg.reactions[data.emoji]++;
+                }
+            });
+        },
+        methods: {
+            triggerFileInput() { this.$refs.fileInput.click(); },
+            handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const maxSize = 150;
+                        let width = img.width; let height = img.height;
+                        if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+                        else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+                        canvas.width = width; canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        this.avatarPreview = canvas.toDataURL('image/jpeg', 0.8);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            },
+            joinGame() { if(this.nickname) { socket.emit('join_game', { nickname: this.nickname, avatar: this.avatarPreview }); this.joined = true; } },
+            startGame() { socket.emit('start_game'); },
+            getCardUrl(c) { 
+                if (!c) return '';
+                let r = c[0] === 'T' ? '0' : c[0];
+                return `https://deckofcardsapi.com/static/img/${r}${c[1]}.png`; 
+            },
+            sendAction(type) { socket.emit('action', { type: type, amount: this.raiseTotal }); },
+            adjustRaise(delta) {
+                let newAmount = this.raiseTotal + delta;
+                if (newAmount < this.minRaiseTarget) newAmount = this.minRaiseTarget;
+                if (newAmount > this.myMaxAssets) newAmount = this.myMaxAssets;
+                this.raiseTotal = newAmount;
+            },
+            sendChat() {
+                if (this.chatInput.trim()) { socket.emit('send_chat', { msg: this.chatInput }); this.chatInput = ''; this.showEmojiPicker = false; }
+            },
+            // ★ 新增：表情相關
+            insertEmoji(emoji) {
+                this.chatInput += emoji;
+                // 不關閉 Picker，方便連續選
+            },
+            toggleReactionMenu(msgId) {
+                this.reactionMenuMsgId = (this.reactionMenuMsgId === msgId) ? null : msgId;
+            },
+            closePickers() {
+                this.reactionMenuMsgId = null;
+                // this.showEmojiPicker = false; // 點擊聊天區域時是否要關閉輸入框的 picker 可自行決定
+            },
+            sendReaction(msgId, emoji) {
+                socket.emit('send_reaction', { msg_id: msgId, emoji: emoji });
+                this.reactionMenuMsgId = null;
+            }
+        }
+    });
+</script>
+</body>
+</html>
